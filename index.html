@@ -98,17 +98,43 @@
   </div>
 
   <script>
-    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby30zUVTMKSxyoKq7GMt7rJEiUiy1MyRzwQybEx-2xff-orJIib-UXVTbJSWHxQQArydg/exec';
-    const translations = { /* same as before */ }; // keep full translations object
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby30zUVTMKSxyoKq7GMt7rJEiUiy1MyRzwQybEx-2xff-orJIib-UXVTbJSWHxQQArydg/exec'; // REPLACE WITH YOUR URL
+    const translations = {
+      en: { appTitle: '📘 Student Portal', tests: 'Tests', results: 'Results', analysis: 'Analysis', contact: 'Contact', availableTests: 'Available Tests', previousResults: 'Previous Test Results', selectTestForAnalysis: 'Select a test to analyze', contactTeacher: 'Contact Teacher', send: 'Send Message', logout: 'Logout' },
+      hi: { appTitle: '📘 छात्र पोर्टल', tests: 'परीक्षाएँ', results: 'परिणाम', analysis: 'विश्लेषण', contact: 'संपर्क', availableTests: 'उपलब्ध परीक्षाएँ', previousResults: 'पिछले परिणाम', selectTestForAnalysis: 'विश्लेषण के लिए परीक्षा चुनें', contactTeacher: 'शिक्षक से संपर्क', send: 'संदेश भेजें', logout: 'लॉग आउट' }
+    };
     let currentLang = 'en';
     let studentToken = localStorage.getItem('studentToken');
     let studentInfo = null;
-    let testsTaken = [];
+    let testsTaken = []; // for analysis dropdown
 
-    function setLanguage(lang) { /* same */ }
-    function showMessage(msg, isError = false) { /* same */ }
-    function showLoading(btn) { /* same */ }
-    function hideLoading(btn, originalText) { /* same */ }
+    function setLanguage(lang) {
+      currentLang = lang;
+      document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.dataset.i18n;
+        if (translations[lang]?.[key]) {
+          if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') el.placeholder = translations[lang][key];
+          else el.innerText = translations[lang][key];
+        }
+      });
+    }
+
+    function showMessage(msg, isError = false) {
+      const msgDiv = document.getElementById('message');
+      msgDiv.classList.remove('hidden');
+      msgDiv.className = `mt-4 text-sm text-center p-3 rounded-xl ${isError ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`;
+      msgDiv.innerText = msg;
+      setTimeout(() => msgDiv.classList.add('hidden'), 5000);
+    }
+
+    function showLoading(btn) {
+      btn.disabled = true;
+      btn.innerHTML = `<div class="loading-dots"><span></span><span></span><span></span></div>`;
+    }
+    function hideLoading(btn, originalText) {
+      btn.disabled = false;
+      btn.innerHTML = originalText;
+    }
 
     // Tab switching
     document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -128,16 +154,107 @@
       loadStudentInfo();
       loadAvailableTests();
       document.querySelector('[data-tab="tests"]').click();
-      // Add change listener for analysis dropdown
       document.getElementById('analysisTestSelector').addEventListener('change', function(e) {
         const testId = e.target.value;
         if (testId) loadAnalysisForTest(testId);
       });
     };
 
-    async function loadStudentInfo() { /* same as before */ }
-    async function loadAvailableTests() { /* same */ }
-    async function loadResults() { /* same */ }
+    async function loadStudentInfo() {
+      try {
+        const res = await fetch(APPS_SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify({ action: 'getStudentDashboard', token: studentToken })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          studentInfo = data.data;
+          document.getElementById('studentNameDisplay').innerText = studentInfo.name;
+          document.getElementById('studentIdDisplay').innerText = `ID: ${studentInfo.id}`;
+          document.getElementById('studentDobDisplay').innerText = `DOB: ${studentInfo.dob}`;
+        } else {
+          showMessage(data.data, true);
+        }
+      } catch (e) {
+        showMessage('Network error loading student info', true);
+      }
+    }
+
+    async function loadAvailableTests() {
+      const container = document.getElementById('availableTestsList');
+      container.innerHTML = '<div class="flex justify-center py-8"><div class="loading-dots"><span></span><span></span><span></span></div></div>';
+      try {
+        const res = await fetch(APPS_SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify({ action: 'getAvailableTests', token: studentToken })
+        });
+        const data = await res.json();
+        if (data.status !== 'success') {
+          container.innerHTML = `<p class="text-red-500 text-center py-4">${data.data}</p>`;
+          return;
+        }
+        if (data.data.length === 0) {
+          container.innerHTML = '<p class="text-gray-500 text-center py-4">No tests available at the moment.</p>';
+          return;
+        }
+        let html = '';
+        data.data.forEach(test => {
+          html += `
+          <div class="bg-white/70 p-4 rounded-xl flex flex-wrap justify-between items-center">
+            <div>
+              <h4 class="font-bold text-gray-800">${test.testName}</h4>
+              <p class="text-sm text-gray-600">Duration: ${test.duration} min | Marks: +${test.correctMarks} / -${test.wrongMarks} / 0:${test.skipMarks}</p>
+            </div>
+            <button onclick="startTest('${test.testId}')" class="px-6 py-2 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white rounded-full text-sm font-medium shadow-lg transition">
+              Start Test <i class="fas fa-arrow-right ml-1"></i>
+            </button>
+          </div>`;
+        });
+        container.innerHTML = html;
+      } catch (e) {
+        container.innerHTML = '<p class="text-red-500 text-center py-4">Network error loading tests</p>';
+      }
+    }
+
+    function startTest(testId) {
+      window.location.href = `test.html?testId=${testId}`;
+    }
+
+    async function loadResults() {
+      const container = document.getElementById('previousResultsList');
+      container.innerHTML = '<div class="flex justify-center py-8"><div class="loading-dots"><span></span><span></span><span></span></div></div>';
+      try {
+        const res = await fetch(APPS_SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify({ action: 'getStudentResults', token: studentToken })
+        });
+        const data = await res.json();
+        if (data.status !== 'success') {
+          container.innerHTML = `<p class="text-red-500 text-center py-4">${data.data}</p>`;
+          return;
+        }
+        testsTaken = data.data; // store for analysis dropdown
+        if (data.data.length === 0) {
+          container.innerHTML = '<p class="text-gray-500 text-center py-4">You have not taken any tests yet.</p>';
+          return;
+        }
+        let html = '<table class="w-full text-sm"><thead class="bg-gray-100"><tr><th class="p-2 text-left">Test</th><th class="p-2 text-left">Score</th><th class="p-2 text-left">Rank</th><th class="p-2 text-left">Submitted</th><th class="p-2 text-left">Action</th></tr></thead><tbody>';
+        data.data.forEach(r => {
+          html += `
+          <tr class="border-b">
+            <td class="p-2">${r.testName}</td>
+            <td class="p-2 font-bold">${r.score}</td>
+            <td class="p-2">#${r.rank}</td>
+            <td class="p-2">${new Date(r.submitted).toLocaleString()}</td>
+            <td class="p-2"><button onclick="openAnalysis('${r.testId}')" class="text-blue-600 hover:underline text-sm">View Analysis</button></td>
+          </tr>`;
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+      } catch (e) {
+        container.innerHTML = '<p class="text-red-500 text-center py-4">Network error loading results</p>';
+      }
+    }
 
     function loadAnalysisTests() {
       const select = document.getElementById('analysisTestSelector');
@@ -151,7 +268,10 @@
       const container = document.getElementById('analysisDetails');
       container.innerHTML = '<div class="flex justify-center py-8"><div class="loading-dots"><span></span><span></span><span></span></div></div>';
       try {
-        const res = await fetch(APPS_SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'getTestAnalysis', token: studentToken, testId }) });
+        const res = await fetch(APPS_SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify({ action: 'getTestAnalysis', token: studentToken, testId })
+        });
         const data = await res.json();
         if (data.status !== 'success') {
           container.innerHTML = `<p class="text-red-500 text-center py-4">${data.data}</p>`;
@@ -174,17 +294,21 @@
           </div>`;
         });
         container.innerHTML = html;
-      } catch(e) {
+      } catch (e) {
         container.innerHTML = '<p class="text-red-500 text-center py-4">Network error</p>';
       }
     }
 
     async function openAnalysis(testId) {
-      // called from results table
-      const res = await fetch(APPS_SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'getTestAnalysis', token: studentToken, testId }) });
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'getTestAnalysis', token: studentToken, testId })
+      });
       const data = await res.json();
-      if (data.status !== 'success') return showMessage(data.data, true);
-      
+      if (data.status !== 'success') {
+        showMessage(data.data, true);
+        return;
+      }
       const modal = document.getElementById('analysisModal');
       const content = document.getElementById('analysisModalContent');
       let html = '';
@@ -192,16 +316,55 @@
         const status = item.isCorrect ? 'text-green-600' : 'text-red-600';
         const yourAnswer = item.studentAnswer || '<em>Not answered</em>';
         const correctAnswer = item.questionType === 'NUMERICAL' ? item.correctAnswer : `Option ${item.correct}`;
-        html += `<div class="border-b pb-4 mb-4">...</div>`; // same as above
+        html += `<div class="border-b pb-4 mb-4">
+          <p class="font-medium">Q${idx+1}: ${item.qTextEng}</p>
+          <p class="text-sm text-gray-600">${item.qTextHin || ''}</p>
+          <div class="grid grid-cols-2 gap-2 mt-2 text-sm">
+            <div><span class="font-semibold">Your answer:</span> ${yourAnswer}</div>
+            <div><span class="font-semibold">Correct answer:</span> ${correctAnswer}</div>
+            <div><span class="font-semibold">Status:</span> <span class="${status}">${item.isCorrect ? 'Correct' : 'Incorrect'}</span></div>
+            <div><span class="font-semibold">Marks:</span> ${item.marksObtained}</div>
+          </div>
+        </div>`;
       });
       content.innerHTML = html;
       modal.style.display = 'flex';
     }
 
-    function closeAnalysisModal() { document.getElementById('analysisModal').style.display = 'none'; }
-    async function sendContactMessage() { /* same */ }
-    function startTest(testId) { window.location.href = `test.html?testId=${testId}`; }
-    function logout() { localStorage.clear(); window.location.href = 'login.html'; }
+    function closeAnalysisModal() {
+      document.getElementById('analysisModal').style.display = 'none';
+    }
+
+    async function sendContactMessage() {
+      const message = document.getElementById('contactMessage').value.trim();
+      if (!message) return showMessage('Message cannot be empty', true);
+      const btn = document.getElementById('sendContactBtn');
+      const original = btn.innerHTML;
+      showLoading(btn);
+      try {
+        const res = await fetch(APPS_SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify({ action: 'sendMessage', token: studentToken, message })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          showMessage('Message sent successfully');
+          document.getElementById('contactMessage').value = '';
+        } else {
+          showMessage(data.data, true);
+        }
+      } catch (e) {
+        showMessage('Network error', true);
+      }
+      hideLoading(btn, original);
+    }
+
+    function logout() {
+      localStorage.removeItem('studentToken');
+      localStorage.removeItem('studentName');
+      localStorage.removeItem('studentId');
+      window.location.href = 'login.html';
+    }
   </script>
 </body>
 </html>
